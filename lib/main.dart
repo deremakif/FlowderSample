@@ -1,4 +1,11 @@
+import 'dart:io';
+
+import 'package:flowder/flowder.dart';
+import 'package:flowder_sample/file_models/file_model.dart';
 import 'package:flutter/material.dart';
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:percent_indicator/percent_indicator.dart';
 
 void main() {
   runApp(MyApp());
@@ -11,33 +18,15 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
         primarySwatch: Colors.blue,
       ),
-      home: MyHomePage(title: 'Flutter Demo Home Page'),
+      home: MyHomePage(title: 'Flowder Sample'),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
   MyHomePage({Key? key, required this.title}) : super(key: key);
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
 
   final String title;
 
@@ -46,68 +35,144 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  List<FileModel> fileList = [];
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+  late DownloaderUtils options;
+  late DownloaderCore core;
+  late final String path;
+
+  @override
+  void initState() {
+    super.initState();
+
+    initPlatformState();
+    generateFileList();
+  }
+
+  generateFileList() {
+    fileList
+      ..add(FileModel(
+        fileName: "loremipsum.pdf",
+        url:
+            "https://assets.website-files.com/603d0d2db8ec32ba7d44fffe/603d0e327eb2748c8ab1053f_loremipsum.pdf",
+        progress: 0.0,
+      ))
+      ..add(FileModel(
+        fileName: "5MB.zip",
+        url: "http://ipv4.download.thinkbroadband.com/5MB.zip",
+        progress: 0.0,
+      ))
+      ..add(FileModel(
+        fileName: "halloween.jpg",
+        url:
+            "https://png.pngtree.com/png-clipart/20210718/original/pngtree-cute-halloween-spooky-pumpkin-bat-png-image_6533837.jpg",
+        progress: 0.0,
+      ));
+  }
+
+  Future<void> initPlatformState() async {
+    _setPath();
+    if (!mounted) return;
+  }
+
+  void _setPath() async {
+    Directory _path = await getApplicationDocumentsDirectory();
+
+    String _localPath = _path.path + Platform.pathSeparator + 'Download';
+
+    final savedDir = Directory(_localPath);
+    bool hasExisted = await savedDir.exists();
+    if (!hasExisted) {
+      savedDir.create();
+    }
+
+    path = _localPath;
+  }
+
+  generateWidgetList() {
+    List<Widget> widgetList = [];
+
+    fileList.asMap().forEach((index, element) {
+      widgetList.add(Row(
+        children: [
+          Container(
+            width: 200,
+            padding: EdgeInsets.fromLTRB(0, 0, 0, 0),
+            child: Text(fileList[index].fileName!),
+          ),
+          ElevatedButton(
+            style: ButtonStyle(
+              backgroundColor: MaterialStateProperty.all(Colors.blue),
+            ),
+            onPressed: () async {
+              options = DownloaderUtils(
+                progressCallback: (current, total) {
+                  final progress = (current / total) * 100;
+                  print('Downloading: $progress');
+
+                  setState(() {
+                    fileList[index].progress = (current / total);
+                  });
+                },
+                file: File('$path/${fileList[index].fileName}'),
+                progress: ProgressImplementation(),
+                onDone: () {
+                  setState(() {
+                    fileList[index].progress = 0.0;
+                  });
+                  OpenFile.open('$path/${fileList[index].fileName}')
+                      .then((value) {
+                    // delete the file.
+                    File f = File('$path/${fileList[index].fileName}');
+                    f.delete();
+                  });
+                },
+                deleteOnCancel: true,
+              );
+              core = await Flowder.download(
+                fileList[index].url!,
+                options,
+              );
+            },
+            child: Column(
+              children: [
+                if (fileList[index].progress == 0.0)
+                  Icon(
+                    Icons.download,
+                  ),
+                if (fileList[index].progress != 0.0)
+                  LinearPercentIndicator(
+                    width: 100.0,
+                    lineHeight: 14.0,
+                    percent: fileList[index].progress!,
+                    backgroundColor: Colors.blue,
+                    progressColor: Colors.white,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ));
     });
+
+    return widgetList;
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: Padding(
+        padding: const EdgeInsets.all(28.0),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: <Widget>[
-            Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
+            ...generateWidgetList(),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
